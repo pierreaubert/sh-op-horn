@@ -23,6 +23,9 @@ import argparse
 import cmath
 from math import pi, sin, cos, asin, log10, log2
 from typing import List, Tuple, Dict, Any
+import warnings
+
+warnings.simplefilter("ignore")
 
 import matplotlib.pyplot as plt
 from sympy import solve, symbols
@@ -76,6 +79,9 @@ def helmotz_complex(mesh: Any, freq: float, conf: Dict, V: Any, sol: Any) -> Any
         sol,
         solver_parameters={
             "ksp_type": "gmres",
+            "ksp_converged_reason": None,
+            "ksp_monitor_true_residual": None,
+            # 'ksp_view': None
             # "mat_type": "matfree",
             # "ksp_type": "cg",
             # "ksp_monitor": None,
@@ -88,20 +94,21 @@ def helmotz_complex(mesh: Any, freq: float, conf: Dict, V: Any, sol: Any) -> Any
 
 
 def helmotz_complex_parametrize(
-    mesh: Any, conf: Dict, freqs: List[float]
+    local_mesh: Any, conf: Dict, local_freqs: List[float]
 ) -> Dict[float, Any]:
-    V = fd.FunctionSpace(mesh, "CG", 1)
+    V = fd.FunctionSpace(local_mesh, "CG", 1)
     prev_sol = fd.Function(V)
     sol = fd.Function(V)
 
-    results = {}
-    for freq in freqs:
-        sol = helmotz_complex(mesh, freq, conf, V, prev_sol)
-        with sol.vec.ro as sol_ro:
-            results[freq] = sol_ro
-            prev_sol = sol
+    local_results = {}
+    PETSc.Sys.Print("Processing: ", end="", flush=True)
+    for freq in local_freqs:
+        sol = helmotz_complex(local_mesh, freq, conf, V, prev_sol)
+        local_results[freq] = sol.copy(deepcopy=True)
+        prev_sol = sol
+        PETSc.Sys.Print("{:.1f}hz ".format(freq), end="", flush=True)
 
-    return results
+    return local_results
 
 
 def compute_H_measurements(results: Dict[float, Any]) -> Any:
@@ -118,13 +125,14 @@ def compute_H_measurements(results: Dict[float, Any]) -> Any:
         p_x = r * cos(theta_rad)
         p_y = r * sin(theta_rad)
         for fr, sol in results.items():
+            # does that work in // ?
             p_p = sol.at(p_x, p_y, dont_raise=True)
             if p_p is not None and abs(p_p) >= 0:
                 if abs(p_p) == 0:
                     p_db = -120
                 else:
                     p_db = 105 + 20 * log10(abs(p_p))
-                # print('{:3.0f} {:+0.2f} {:+0.2f} {}'.format(theta, p_x, p_y, p_db))
+                # print("{:3.0f} {:+0.2f} {:+0.2f} {}".format(theta, p_x, p_y, p_db))
                 dbs.append(p_db)
             else:
                 print("{} {} {} {} ERROR".format(theta, p_x, p_y, p_p))
@@ -176,23 +184,30 @@ def save_H_measurements(dfs: pd.DataFrame, freq_min: float, freq_max: float):
     )
 
 
-def save_H_contour(df, freq_min, freq_max):
+def save_H_contour(df, freq_min: float, freq_max: float):
     isoband_params = isoband_params_default
     isoband_params["xmin"] = freq_min
     isoband_params["xmax"] = freq_max
     return graph_isoband(df, isoband_params)
 
 
-def save_J(freqs, conf, freq_min, freq_max):
+def save_J(
+    local_freqs: List[float],
+    local_results: Dict[float, Any],
+    conf: Dict,
+    freq_min: float,
+    freq_max: float,
+) -> Any:
     g_inlet = conf["g_inlet"]
-    length_in = abs(fd.assemble(results[freq_min] / results[freq_min] * fd.ds(g_inlet)))
+    r0 = list(results.values())[0]
+    length_in = abs(fd.assemble(r0 / r0 * fd.ds(g_inlet)))
     reflections = [
         abs(abs(fd.assemble(abs(s_hz) * fd.ds(g_inlet)) / length_in) - 1)
-        for s_hz in results
+        for s_hz in results.values()
     ]
 
     return (
-        alt.Chart(pd.DataFrame({"Freq": freqs, "Reflection": reflections}))
+        alt.Chart(pd.DataFrame({"Freq": local_freqs, "Reflection": reflections}))
         .mark_line()
         .encode(
             x=alt.X(
@@ -217,23 +232,45 @@ def save_spin(df):
     return graph_spinorama(n_spin, graph_params_default)
 
 
-def save_results(results: Dict[float, Any], radical: str) -> None:
-    for f, r in results.items():
+def save_results(local_results: Dict[float, Any], radical: str) -> None:
+    for f, r in local_results.items():
         output = fd.File("output/{}-{:04d}.pvd".format(radical, int(f)))
         output.write(r, t=f)
 
 
 def save_graphs(
-    freqs: List[float], results: Dict[float, Any], radical: str, conf: Dict
+    local_freqs: List[float],
+    local_results: Dict[float, Any],
+    radical: str,
+    conf: Dict,
+    comm: Any,
 ) -> None:
-    save_results(results, radical)
-    df, dfs = compute_H_measurements(results)
+
+    PETSc.Sys.Print("Save results")
+    save_results(local_results, radical)
+
+    PETSc.Sys.Print("Compute H SPL")
+    df, dfs = compute_H_measurements(local_results)
+
     freq_min = conf["freq_min"]
     freq_max = conf["freq_max"]
-    graph_J = save_J(results, conf, freq_min, freq_max)
+
+    PETSc.Sys.Print("Compute Graph J")
+    graph_J = save_J(local_freqs, local_results, conf, freq_min, freq_max)
+
+    comm.barrier()
+
+    if comm.rank != 0:
+        return
+
+    PETSc.Sys.Print("Compute Graph H SPL")
     graph_H_measurements = save_H_measurements(dfs, freq_min, freq_max)
+    PETSc.Sys.Print("Compute Graph H Contour")
     graph_H_contour = save_H_contour(df, freq_min, freq_max)
+    PETSc.Sys.Print("Compute Graph Spin")
     graph_spin = save_spin(df)
+
+    PETSc.Sys.Print("Save Graphs")
     for name, graph in [
         ("J", graph_J),
         ("H_spl", graph_H_measurements),
@@ -284,7 +321,7 @@ if __name__ == "__main__":
 
     comm = fd.COMM_WORLD
 
-    PETSc.Sys.Print("setting up mesh across %d processes" % fd.COMM_WORLD.size)
+    PETSc.Sys.Print("setting up mesh across {} processes".format(fd.COMM_WORLD.size))
 
     mesh = fd.Mesh("meshes/{}.msh".format(args.mesh), comm=comm)
 
@@ -298,6 +335,10 @@ if __name__ == "__main__":
 
     comm.barrier()
 
-    save_graphs(freqs, results, args.mesh, solver_config)
+    PETSc.Sys.Print("post barrier, start graphs")
+
+    save_graphs(freqs, results, args.mesh, solver_config, comm)
+
+    PETSc.Sys.Print("Bye")
 
     sys.exit(0)

@@ -2,6 +2,14 @@
 
 touch env.log
 
+mkdir -p output meshes
+
+# to please firedrack
+export OMP_NUM_THREADS=1
+
+# to please pyright
+export PYTHONPATH=$HOME/src/spinorama
+
 ## SSH AGENT
 ## ----------------------------------------------------------------------
 ssh-agent -k 2>&1 >> env.log

@@ -1,4 +1,10 @@
 venv
 *.log
 *~
+package-lock.json
+output
+meshes
+node_modules
+
+
 
