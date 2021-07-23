@@ -29,16 +29,9 @@ fi
 
 ## python virtualenv
 ## ----------------------------------------------------------------------
-HSO=$HOME/src/HornShapeOptimization
-export PYTHONPATH=$HSO/src:$HSO/src/website
-if ! test -d $HSO/venv; then
-    python3 -m venv venv
-    rehash
-    pip3 install -U pip
-    pip3 install -r requirements.txt
-    # pip3 install -r requirements-tests.txt
-fi    
-source $HSO/venv/bin/activate
+FIREDRAKE=$HOME/src/firedrake
+export PYTHONPATH=$FIREDRAKE/src:$PYTHONPATH
+source $FIREDRAKE/bin/activate
 
 ## summary
 ## ----------------------------------------------------------------------

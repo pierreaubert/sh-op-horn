@@ -37,6 +37,7 @@ Let's use some shape optimisation. I use [fireshape](https://link.springer.com/a
 
 ## Math
 
+- Why it is difficult to solve Helmholtz problems with classical iterative methods, in Numerical Analysis of Multiscale Problems, I. Graham, T. Hou, O. Lakkis, and R. Scheichl, eds., Springer-Verlag, Berlin, 2012, pp. 325–363.
 - On a class of preconditioners for solving the Helmholtz equation. Y.A. Erlangga C. Vuik C.W. Oosterlee. Department of Applied Mathematical Analysis, Delft University of Technology, Mekelweg 4, 2628 CD, Delft, The Netherlands. 2004.
 - How large a shift is needed in the shifted Helmholtz preconditioner for its effective inversion by multigrid? Pierre-Henri Cocquet and Martin J. Gander. SIAM J. SCI. COMPUT. c 2017 Society for Industrial and Applied Mathematics. Vol. 39, No. 2, pp. A438–A478
 - Efficient model reduction of parametrized systems by matrix discrete empirical interpolation. Federico Negri, Andrea Manzoni, David Amsallem.  MATHICSE Technical Report Nr. 02.2015 February 2015.
