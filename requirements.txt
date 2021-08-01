@@ -1,10 +1,12 @@
 numpy
 matplotlib
 jupyterlab
-firedrack
 altair
 scipy
 altair-saver
+gmsh
+astropy
+
 
 
 
